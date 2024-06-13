@@ -11,6 +11,7 @@
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
 [submodule "lib/osx"]
 	path = lib/osx
+	branch = "develop"
 	url = https://github.com/aragon/osx
 [submodule "lib/openzeppelin-contracts-upgradeable"]
 	# branch = "v4.9.6"
