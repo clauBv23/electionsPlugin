@@ -12,32 +12,16 @@ import {_applyRatioCeiled} from "@aragon/osx-commons-contracts/src/utils/math/Ra
 import {IDAO} from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
 import {MajorityVotingBase} from "./MajorityVotingBase.sol";
 
-/// @title TokenVoting
-/// @author Aragon X - 2021-2023
-/// @notice The majority voting implementation using an
-/// [OpenZeppelin `Votes`](https://docs.openzeppelin.com/contracts/4.x/api/governance#Votes)
-/// compatible governance token.
-/// @dev v1.3 (Release 1, Build 3)
-/// @custom:security-contact sirt@aragon.org
 contract TokenVoting is IMembership, MajorityVotingBase {
     using SafeCastUpgradeable for uint256;
 
-    /// @notice The [ERC-165](https://eips.ethereum.org/EIPS/eip-165) interface ID of the contract.
     bytes4 internal constant TOKEN_VOTING_INTERFACE_ID =
         this.initialize.selector ^ this.getVotingToken.selector;
 
-    /// @notice An [OpenZeppelin `Votes`](https://docs.openzeppelin.com/contracts/4.x/api/governance#Votes)
-    /// compatible contract referencing the token being used for voting.
     IVotesUpgradeable private votingToken;
 
-    /// @notice Thrown if the voting power is zero
     error NoVotingPower();
 
-    /// @notice Initializes the component.
-    /// @dev This method is required to support [ERC-1822](https://eips.ethereum.org/EIPS/eip-1822).
-    /// @param _dao The IDAO interface of the associated DAO.
-    /// @param _votingSettings The voting settings.
-    /// @param _token The [ERC-20](https://eips.ethereum.org/EIPS/eip-20) token used for voting.
     function initialize(
         IDAO _dao,
         VotingSettings calldata _votingSettings,
@@ -50,9 +34,6 @@ contract TokenVoting is IMembership, MajorityVotingBase {
         emit MembershipContractAnnounced({definingContract: address(_token)});
     }
 
-    /// @notice Checks if this or the parent contract supports an interface by its ID.
-    /// @param _interfaceId The ID of the interface.
-    /// @return Returns `true` if the interface is supported.
     function supportsInterface(bytes4 _interfaceId) public view virtual override returns (bool) {
         return
             _interfaceId == TOKEN_VOTING_INTERFACE_ID ||
@@ -69,19 +50,14 @@ contract TokenVoting is IMembership, MajorityVotingBase {
     }
 
     /// @inheritdoc MajorityVotingBase
-    function totalVotingPower(uint256 _blockNumber) public view override returns (uint256) {
-        return votingToken.getPastTotalSupply(_blockNumber);
+    function totalVotingPower() public view override returns (uint256) {
+        return IERC20Upgradeable(address(votingToken)).totalSupply();
     }
 
     /// @inheritdoc MajorityVotingBase
     function createProposal(
         bytes calldata _metadata,
-        IDAO.Action[] calldata _actions,
-        uint256 _allowFailureMap,
-        uint64 _startDate,
-        uint64 _endDate,
-        VoteOption _voteOption,
-        bool _tryEarlyExecution
+        bytes32[] calldata _nominees
     ) external override returns (uint256 proposalId) {
         // Check that either `_msgSender` owns enough tokens or has enough voting power from being a delegatee.
         {
@@ -100,58 +76,48 @@ contract TokenVoting is IMembership, MajorityVotingBase {
             }
         }
 
-        uint256 snapshotBlock;
-        unchecked {
-            // The snapshot block must be mined already to
-            // protect the transaction against backrunning transactions causing census changes.
-            snapshotBlock = block.number - 1;
-        }
-
-        uint256 totalVotingPower_ = totalVotingPower(snapshotBlock);
+        // todo how calculate the voting power => it is not tied to an specific block due is continuous
+        uint256 totalVotingPower_ = totalVotingPower();
 
         if (totalVotingPower_ == 0) {
             revert NoVotingPower();
         }
 
-        (_startDate, _endDate) = _validateProposalDates(_startDate, _endDate);
-
         proposalId = _createProposal({
             _creator: _msgSender(),
             _metadata: _metadata,
-            _startDate: _startDate,
-            _endDate: _endDate,
-            _actions: _actions,
-            _allowFailureMap: _allowFailureMap
+            _nominees: _nominees
         });
 
         // Store proposal related information
         Proposal storage proposal_ = proposals[proposalId];
 
-        proposal_.parameters.startDate = _startDate;
-        proposal_.parameters.endDate = _endDate;
-        proposal_.parameters.snapshotBlock = snapshotBlock.toUint64();
-        proposal_.parameters.votingMode = votingMode();
         proposal_.parameters.supportThreshold = supportThreshold();
         proposal_.parameters.minVotingPower = _applyRatioCeiled(
             totalVotingPower_,
             minParticipation()
         );
 
-        // Reduce costs
-        if (_allowFailureMap != 0) {
-            proposal_.allowFailureMap = _allowFailureMap;
+        // store nominees
+        for (uint256 i = 0; i < _nominees.length; i++) {
+            proposal_.nominees.push(Nominee({dataHash: _nominees[i], votes: 0}));
+            proposal_.nomineePosition[_nominees[i]] = i + 1;
         }
 
-        for (uint256 i; i < _actions.length; ) {
-            proposal_.actions.push(_actions[i]);
-            unchecked {
-                ++i;
-            }
-        }
+        // ? should allow to vote when creating?
+    }
 
-        if (_voteOption != VoteOption.None) {
-            vote(proposalId, _voteOption, _tryEarlyExecution);
+    event Nominated(uint256 proposalId, bytes32 nominee);
+    error ProposalNotFound(uint256 proposalId);
+
+    function nominate(uint256 _proposalId, bytes32 _newNominee) external returns (uint256 newIdx) {
+        Proposal storage proposal_ = proposals[_proposalId];
+        if (proposal_.nominees.length == 0) {
+            revert ProposalNotFound(_proposalId);
         }
+        newIdx = proposal_.nominees.length;
+        proposal_.nominees.push(Nominee({dataHash: _newNominee, votes: 0}));
+        emit Nominated(_proposalId, _newNominee);
     }
 
     /// @inheritdoc IMembership
@@ -163,34 +129,24 @@ contract TokenVoting is IMembership, MajorityVotingBase {
     }
 
     /// @inheritdoc MajorityVotingBase
-    function _vote(
-        uint256 _proposalId,
-        VoteOption _voteOption,
-        address _voter,
-        bool _tryEarlyExecution
-    ) internal override {
+    function _vote(uint256 _proposalId, bytes32 _voteOption, address _voter) internal override {
         Proposal storage proposal_ = proposals[_proposalId];
 
         // This could re-enter, though we can assume the governance token is not malicious
-        uint256 votingPower = votingToken.getPastVotes(_voter, proposal_.parameters.snapshotBlock);
-        VoteOption state = proposal_.voters[_voter];
+        // todo how calculate the voting power
+        uint256 votingPower = IERC20Upgradeable(address(votingToken)).balanceOf(_voter);
 
-        // If voter had previously voted, decrease count
-        if (state == VoteOption.Yes) {
-            proposal_.tally.yes = proposal_.tally.yes - votingPower;
-        } else if (state == VoteOption.No) {
-            proposal_.tally.no = proposal_.tally.no - votingPower;
-        } else if (state == VoteOption.Abstain) {
-            proposal_.tally.abstain = proposal_.tally.abstain - votingPower;
-        }
+        // check if the voter has voted before
+        bytes32 previousVote = proposal_.voters[_voter];
+        uint256 newOptionIdx = proposal_.nomineePosition[_voteOption] - 1;
 
-        // write the updated/new vote for the voter.
-        if (_voteOption == VoteOption.Yes) {
-            proposal_.tally.yes = proposal_.tally.yes + votingPower;
-        } else if (_voteOption == VoteOption.No) {
-            proposal_.tally.no = proposal_.tally.no + votingPower;
-        } else if (_voteOption == VoteOption.Abstain) {
-            proposal_.tally.abstain = proposal_.tally.abstain + votingPower;
+        if (previousVote != bytes32(0)) {
+            uint256 previousOptionIdx = proposal_.nomineePosition[previousVote] - 1;
+            // If voter had previously voted, decrease votes
+            proposal_.nominees[newOptionIdx].votes += votingPower;
+            proposal_.nominees[previousOptionIdx].votes -= votingPower;
+        } else {
+            proposal_.nominees[newOptionIdx].votes += votingPower;
         }
 
         proposal_.voters[_voter] = _voteOption;
@@ -201,48 +157,79 @@ contract TokenVoting is IMembership, MajorityVotingBase {
             voteOption: _voteOption,
             votingPower: votingPower
         });
+    }
 
-        if (_tryEarlyExecution && _canExecute(_proposalId)) {
-            _execute(_proposalId);
+    function validateTopNominees(
+        uint256 _proposalId,
+        uint256[] calldata _topNominees
+    ) external view returns (bool) {
+        uint256 biggerVal;
+        Proposal storage proposal_ = proposals[_proposalId];
+        uint256 length = proposal_.nominees.length;
+        uint256 currentVotesValue;
+        for (uint i = 0; i < length; i++) {
+            currentVotesValue = proposal_.nominees[i].votes;
+            // get bigger value that is not in topValues
+            if (currentVotesValue > biggerVal) {
+                // check if is not in topValues
+                if (!_isInList(currentVotesValue, _topNominees)) {
+                    biggerVal = currentVotesValue;
+                }
+            }
         }
+        // check if this bigger value is bigger than any of the list elements
+        return !_isBigger(biggerVal, _topNominees);
+    }
+
+    function _isBigger(uint256 value, uint256[] calldata list) internal pure returns (bool) {
+        for (uint i = 0; i < list.length; i++) {
+            if (value > list[i]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function _isInList(uint256 value, uint256[] calldata list) internal pure returns (bool) {
+        for (uint i = 0; i < list.length; i++) {
+            if (list[i] == value) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// @inheritdoc MajorityVotingBase
     function _canVote(
         uint256 _proposalId,
-        address _account,
-        VoteOption _voteOption
+        address _voter,
+        bytes32 _voteOption
     ) internal view override returns (bool) {
         Proposal storage proposal_ = proposals[_proposalId];
 
-        // The proposal vote hasn't started or has already ended.
-        if (!_isProposalOpen(proposal_)) {
+        // Proposal exists
+        if (proposal_.nominees.length == 0) {
             return false;
         }
 
-        // The voter votes `None` which is not allowed.
-        if (_voteOption == VoteOption.None) {
+        // The voter votes `bytes(0)` which is not allowed.
+        if (_voteOption == bytes32(0)) {
+            return false;
+        }
+
+        // nominee has not been nominated
+        if (proposal_.nomineePosition[_voteOption] == 0) {
             return false;
         }
 
         // The voter has no voting power.
-        if (votingToken.getPastVotes(_account, proposal_.parameters.snapshotBlock) == 0) {
-            return false;
-        }
-
-        // The voter has already voted but vote replacment is not allowed.
-        if (
-            proposal_.voters[_account] != VoteOption.None &&
-            proposal_.parameters.votingMode != VotingMode.VoteReplacement
-        ) {
+        // todo voting power
+        if (IERC20Upgradeable(address(votingToken)).balanceOf(_voter) == 0) {
             return false;
         }
 
         return true;
     }
 
-    /// @dev This empty reserved space is put in place to allow future versions to add new
-    /// variables without shifting down storage in the inheritance chain.
-    /// https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
     uint256[49] private __gap;
 }
