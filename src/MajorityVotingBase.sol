@@ -180,6 +180,7 @@ abstract contract MajorityVotingBase is
         _vote(_proposalId, _voteOption, account);
     }
 
+    // solhint-disable no-empty-blocks
     /// @inheritdoc IMajorityVoting
     function getVoteOption(
         uint256 _proposalId,
@@ -198,21 +199,15 @@ abstract contract MajorityVotingBase is
     }
 
     /// @inheritdoc IMajorityVoting
-    function isSupportThresholdReached(uint256 _proposalId) public view virtual returns (bool) {
-        Proposal storage proposal_ = proposals[_proposalId];
-    }
+    function isSupportThresholdReached(uint256 _proposalId) public view virtual returns (bool) {}
 
     /// @inheritdoc IMajorityVoting
     function isSupportThresholdReachedEarly(
         uint256 _proposalId
-    ) public view virtual returns (bool) {
-        Proposal storage proposal_ = proposals[_proposalId];
-    }
+    ) public view virtual returns (bool) {}
 
     /// @inheritdoc IMajorityVoting
-    function isMinParticipationReached(uint256 _proposalId) public view virtual returns (bool) {
-        Proposal storage proposal_ = proposals[_proposalId];
-    }
+    function isMinParticipationReached(uint256 _proposalId) public view virtual returns (bool) {}
 
     /// @inheritdoc IMajorityVoting
     function supportThreshold() public view virtual returns (uint32) {

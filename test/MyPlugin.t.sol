@@ -16,11 +16,11 @@ import {MajorityVotingBase} from "../../src/MajorityVotingBase.sol";
 
 contract TestAttacks is AragonTest {
     IDAO internal dao;
-    TokenVoting tv;
-    GovernanceERC20 baseToken;
-    GovernanceWrappedERC20 token;
+    TokenVoting internal tv;
+    GovernanceERC20 internal baseToken;
+    GovernanceWrappedERC20 internal token;
 
-    TokenVotingSetup setup;
+    TokenVotingSetup internal setup;
 
     function _setUp(address[] memory _voters) internal {
         baseToken = new GovernanceERC20(
@@ -121,10 +121,10 @@ contract TestAttacks is AragonTest {
         return false;
     }
 
-    function bubbleSort(uint[] memory data) public view returns (uint[] memory) {
-        uint n = data.length;
-        for (uint i = 0; i < n; i++) {
-            for (uint j = 0; j < n - 1; j++) {
+    function bubbleSort(uint256[] memory data) public view returns (uint256[] memory) {
+        uint256 n = data.length;
+        for (uint256 i = 0; i < n; i++) {
+            for (uint256 j = 0; j < n - 1; j++) {
                 if (data[j] > data[j + 1]) {
                     (data[j], data[j + 1]) = (data[j + 1], data[j]);
                 }

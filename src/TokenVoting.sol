@@ -167,7 +167,7 @@ contract TokenVoting is IMembership, MajorityVotingBase {
         Proposal storage proposal_ = proposals[_proposalId];
         uint256 length = proposal_.nominees.length;
         uint256 currentVotesValue;
-        for (uint i = 0; i < length; i++) {
+        for (uint256 i = 0; i < length; i++) {
             currentVotesValue = proposal_.nominees[i].votes;
             // get bigger value that is not in topValues
             if (currentVotesValue > biggerVal) {
@@ -182,7 +182,7 @@ contract TokenVoting is IMembership, MajorityVotingBase {
     }
 
     function _isBigger(uint256 value, uint256[] calldata list) internal pure returns (bool) {
-        for (uint i = 0; i < list.length; i++) {
+        for (uint256 i = 0; i < list.length; i++) {
             if (value > list[i]) {
                 return true;
             }
@@ -191,7 +191,7 @@ contract TokenVoting is IMembership, MajorityVotingBase {
     }
 
     function _isInList(uint256 value, uint256[] calldata list) internal pure returns (bool) {
-        for (uint i = 0; i < list.length; i++) {
+        for (uint256 i = 0; i < list.length; i++) {
             if (list[i] == value) {
                 return true;
             }
