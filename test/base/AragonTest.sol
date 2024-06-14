@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.24;
 
-import {IPluginSetup, PluginSetup} from "@aragon/osx/framework/plugin/setup/PluginSetup.sol";
 import {DAO} from "@aragon/osx/core/dao/DAO.sol";
+import {IDAO} from "@aragon/osx-commons-contracts/src/dao/IDAO.sol";
+
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+import {TokenVotingSetup} from "../../src/TokenVotingSetup.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -15,13 +18,13 @@ contract AragonTest is Test {
     /// @param setupData The setup data in bytes.
     /// @return A tuple containing the DAO and the address of the plugin.
     function createMockDaoWithPlugin(
-        IPluginSetup setup,
+        TokenVotingSetup setup,
         bytes memory setupData
     ) internal returns (DAO, address) {
         DAO _dao = DAO(payable(new ERC1967Proxy(address(new DAO()), EMPTY_BYTES)));
         _dao.initialize(EMPTY_BYTES, address(this), address(0), "");
 
-        (address plugin, PluginSetup.PreparedSetupData memory preparedSetupData) = setup
+        (address plugin, TokenVotingSetup.PreparedSetupData memory preparedSetupData) = setup
             .prepareInstallation(address(_dao), setupData);
 
         _dao.applyMultiTargetPermissions(preparedSetupData.permissions);
